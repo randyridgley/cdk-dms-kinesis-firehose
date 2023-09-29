@@ -3,16 +3,16 @@ import { getDmsStatus } from './get-dms-status';
 
 export const waitForDmsStatus = async ({
   dms,
-  ReplicationTaskArn,
+  ReplicationConfigArn: ReplicationConfigArn,
   targetStatus,
 }: {
   dms: DatabaseMigrationServiceClient;
-  ReplicationTaskArn: string;
+  ReplicationConfigArn: string;
   targetStatus: string;
 }): Promise<string> => {
   let status = '';
   for (let j = 0; j < 24; j++) {
-    status = await getDmsStatus({ dms, ReplicationTaskArn });
+    status = await getDmsStatus({ dms, ReplicationConfigArn });
     console.log(`DMS status: ${status}`);
     if (status === targetStatus) {
       return status;

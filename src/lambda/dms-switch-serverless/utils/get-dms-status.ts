@@ -1,25 +1,25 @@
 import {
   DatabaseMigrationServiceClient,
-  DescribeReplicationTasksCommand,
+  DescribeReplicationsCommand,
 } from '@aws-sdk/client-database-migration-service';
 
 export const getDmsStatus = async ({
   dms,
-  ReplicationTaskArn,
+  ReplicationConfigArn: replicationConfigArn,
 }: {
   dms: DatabaseMigrationServiceClient;
-  ReplicationTaskArn: string;
+  ReplicationConfigArn: string;
 }): Promise<string> => {
-  const taskDescriptionCmd = new DescribeReplicationTasksCommand({
+  const configDescriptionCmd = new DescribeReplicationsCommand({
     Filters: [
       {
-        Name: 'replication-task-arn',
-        Values: [ReplicationTaskArn],
+        Name: 'replication-config-arn',
+        Values: [replicationConfigArn],
       },
     ],
-    WithoutSettings: true,
   });
-  const taskDescription = await dms.send(taskDescriptionCmd);
-  const status = `${taskDescription?.ReplicationTasks?.[0].Status}`;
+  const taskDescription = await dms.send(configDescriptionCmd);
+  
+  const status = `${taskDescription?.Replications?.[0].Status}`;
   return status;
 };

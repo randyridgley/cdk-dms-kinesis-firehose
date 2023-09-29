@@ -5,33 +5,33 @@ import type {
   CloudFormationCustomResourceFailedResponse,
   CloudFormationCustomResourceSuccessResponse,
 } from 'aws-lambda';
-import { getDmsTask } from './utils/get-dms-task';
+import { getDmsConfig } from './utils/get-dms-config';
 import { hasDmsChanges } from './utils/has-dms-changes';
 import { getDmsStatus } from './utils/get-dms-status';
 import { waitForDmsStatus } from './utils/wait-for-dms-status';
 
 const dms = new DatabaseMigrationServiceClient({});
 const cf = new CloudFormationClient({});
-let ReplicationTaskArn: string;
+let ReplicationConfigArn: string;
 
 export const handler = async (
   event: CloudFormationCustomResourceEvent,
 ): Promise<CloudFormationCustomResourceSuccessResponse | CloudFormationCustomResourceFailedResponse> => {
   try {
     const StackName = `${process.env.STACK_NAME}`;
-    if (!ReplicationTaskArn) {
-      ReplicationTaskArn = await getDmsTask({ cf, StackName });
+    if (!ReplicationConfigArn) {
+      ReplicationConfigArn = await getDmsConfig({ cf, StackName });
     }
-    const status = await getDmsStatus({ dms, ReplicationTaskArn });
+    const status = await getDmsStatus({ dms, ReplicationConfigArn: ReplicationConfigArn });
     if (status === 'running') {
       if (event.RequestType === 'Delete' || await hasDmsChanges({ cf, StackName })) {
         // pause task
         const stopCmd = new StopReplicationCommand({
-          ReplicationConfigArn: ReplicationTaskArn,
+          ReplicationConfigArn: ReplicationConfigArn,
         });
         await dms.send(stopCmd);
         // wait for task to be fully paused
-        await waitForDmsStatus({ dms, ReplicationTaskArn, targetStatus: 'stopped' });
+        await waitForDmsStatus({ dms, ReplicationConfigArn: ReplicationConfigArn, targetStatus: 'stopped' });
       }
     }
     return { ...event, PhysicalResourceId: 'pre-dms', Status: 'SUCCESS' };

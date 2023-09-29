@@ -99,10 +99,10 @@ export class KinesisDMSReplicator extends Construct {
     };
 
     const lambdaProps = {
-      runtime: Runtime.NODEJS_18_X,
+      runtime: Runtime.NODEJS_LATEST,
       memorySize: 1028,
       timeout: Duration.minutes(15),
-      logRetention: RetentionDays.ONE_DAY,
+      logRetention: RetentionDays.ONE_DAY,      
     };
 
     if (!props.serverless) {
@@ -212,7 +212,7 @@ export class KinesisDMSReplicator extends Construct {
         replicationConfigIdentifier: 'dmsKinesisConfig',
       });
 
-      const preDmsFn = new NodejsFunction(this, `pre-dms`, {
+      const preDmsServerlessFn = new NodejsFunction(this, `pre-dms`, {
         ...lambdaProps,
         entry: join(__dirname, "../lambda/dms-switch-serverless/dms-pre.ts"),
         environment: {
@@ -236,7 +236,7 @@ export class KinesisDMSReplicator extends Construct {
         ],
       });
   
-      const postDmsFn = new NodejsFunction(this, `post-dms`, {
+      const postDmsServerlessFn = new NodejsFunction(this, `post-dms`, {
         ...lambdaProps,
         entry: join(__dirname, "../lambda/dms-switch-serverless/dms-post.ts"),
         environment: {
@@ -262,7 +262,7 @@ export class KinesisDMSReplicator extends Construct {
       });
             
       const preProvider = new Provider(this, `pre-dms-provider`, {
-        onEventHandler: preDmsFn,
+        onEventHandler: preDmsServerlessFn,
       });
   
       const preResource = new CustomResource(this, `pre-dms-resource`, {
@@ -271,7 +271,7 @@ export class KinesisDMSReplicator extends Construct {
       });
   
       const postProvider = new Provider(this, `post-dms-provider`, {
-        onEventHandler: postDmsFn,
+        onEventHandler: postDmsServerlessFn,
       });
   
       const postResource = new CustomResource(this, `post-dms-resource`, {

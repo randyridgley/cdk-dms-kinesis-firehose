@@ -22,19 +22,19 @@ export const handler = async (
   | CloudFormationCustomResourceFailedResponse
 > => {
   // note Delete shouldn't re-start DMS since the stack is being deleted
-  const ReplicationTaskArn = `${process.env.DMS_TASK}`;
+  const ReplicationConfigArn = `${process.env.DMS_TASK}`;
   console.log(JSON.stringify({ RequestType: event.RequestType }));
   try {
     switch (event.RequestType) {
       case "Create":
         const startCmd = new StartReplicationCommand({
-          ReplicationConfigArn: ReplicationTaskArn,
+          ReplicationConfigArn: ReplicationConfigArn,
           StartReplicationType: "start-replication",
         });
         await dms.send(startCmd);
         await waitForDmsStatus({
           dms,
-          ReplicationTaskArn,
+          ReplicationConfigArn: ReplicationConfigArn,
           targetStatus: "running",
         });
         return { ...event, PhysicalResourceId: "post-dms", Status: "SUCCESS" };
@@ -47,7 +47,7 @@ export const handler = async (
         if (dmsChanges) {
           shouldUnpause = true;
         } else {
-          const status = await getDmsStatus({ dms, ReplicationTaskArn });
+          const status = await getDmsStatus({ dms, ReplicationConfigArn: ReplicationConfigArn });
           console.log(`DMS status: ${status}`);
           if (status === "stopped" || status === "ready") {
             shouldUnpause = true;
@@ -57,13 +57,13 @@ export const handler = async (
         if (shouldUnpause) {
           // unpause DMS
           const startCmd = new StartReplicationCommand({
-            ReplicationConfigArn: ReplicationTaskArn,
+            ReplicationConfigArn: ReplicationConfigArn,
             StartReplicationType: "resume-processing",
           });
           await dms.send(startCmd);
           await waitForDmsStatus({
             dms,
-            ReplicationTaskArn,
+            ReplicationConfigArn: ReplicationConfigArn,
             targetStatus: "running",
           });
         }
