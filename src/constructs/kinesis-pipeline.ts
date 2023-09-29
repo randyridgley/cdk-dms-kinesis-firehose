@@ -71,8 +71,8 @@ export class KinesisPipeline extends Construct {
     this.deliveryStream = new CfnDeliveryStream(this, 'EventsDeliveryStream', {
       deliveryStreamType: 'KinesisStreamAsSource',
       kinesisStreamSourceConfiguration: {
-          kinesisStreamArn: this.stream.streamArn,
-          roleArn: firehoseKinesisReaderRole.roleArn,
+        kinesisStreamArn: this.stream.streamArn,
+        roleArn: firehoseKinesisReaderRole.roleArn,
       },
       extendedS3DestinationConfiguration: {
         bucketArn: this.bucket.bucketArn,

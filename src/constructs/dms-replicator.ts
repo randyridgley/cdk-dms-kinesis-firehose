@@ -1,53 +1,47 @@
-// import { RemovalPolicy } from "aws-cdk-lib";
-import { CfnEndpoint, CfnReplicationInstance, CfnReplicationSubnetGroup, CfnReplicationTask } from "aws-cdk-lib/aws-dms";
+import { CfnEndpoint, CfnReplicationConfig, CfnReplicationInstance, CfnReplicationSubnetGroup, CfnReplicationTask } from "aws-cdk-lib/aws-dms";
 import { SecurityGroup, SubnetType, Vpc } from "aws-cdk-lib/aws-ec2";
-import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import { Effect, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Stream } from "aws-cdk-lib/aws-kinesis";
-// import { LogGroup, LogStream, RetentionDays } from "aws-cdk-lib/aws-logs";
-// import { AwsCustomResource, AwsCustomResourcePolicy, PhysicalResourceId } from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import { RDSPostgresDatabase } from "./rds-postgres-db";
 import { SecureBucket } from "./secure-bucket";
+import { Provider } from "aws-cdk-lib/custom-resources";
+import { CustomResource, Duration, Stack } from "aws-cdk-lib";
+import { join } from "path";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
+import { RetentionDays } from "aws-cdk-lib/aws-logs";
 
 export interface DMSReplicatorProps {
-  source: SourceProps;
-  target: TargetProps;
-  vpc: Vpc;
+  source: SourceProps,
+  target: TargetProps,
+  vpc: Vpc,
+  serverless: boolean,
 }
 
 export interface TargetProps {
-  stream: Stream;
-  bucket: SecureBucket
+  stream: Stream,
+  bucket: SecureBucket,
 }
 
 export interface SourceProps {
-  databaseName: string;
+  databaseName: string,
   port: number,
   serverName: string,
   username: string,
   password: string,
-  sourceDB: RDSPostgresDatabase
+  sourceDB: RDSPostgresDatabase,
 }
 
-export class DMSReplicator extends Construct {
-  public readonly replicatorInstance: CfnReplicationInstance;
+export class KinesisDMSReplicator extends Construct {
+  // public readonly replicatorInstance: CfnReplicationInstance;
 
   constructor(scope: Construct, id: string, props: DMSReplicatorProps) {
     super(scope, id);
 
-    // const dmsLogGroup = new LogGroup(this, 'DMSLogGroup', {
-    //   retention: RetentionDays.ONE_WEEK,
-    //   removalPolicy: RemovalPolicy.DESTROY,
-    // });
-
-    // const dmsLogStream = new LogStream(this, 'DMSLogStream', {
-    //   logGroup: dmsLogGroup,
-    //   removalPolicy: RemovalPolicy.DESTROY,
-    // });
-
     const subnetGroup = new CfnReplicationSubnetGroup(this, 'DmsSubnetGroup', {
       subnetIds: props.vpc.selectSubnets({
-        subnetType: SubnetType.PRIVATE_WITH_NAT
+        subnetType: SubnetType.PRIVATE_WITH_EGRESS
       }).subnetIds,
       replicationSubnetGroupDescription: 'Replication Subnet group'
     });
@@ -57,16 +51,6 @@ export class DMSReplicator extends Construct {
     });
 
     props.source.sourceDB.database.connections.allowDefaultPortFrom(dmsSecurityGroup);
-    this.replicatorInstance = new CfnReplicationInstance(this, 'DmsInstance', {
-      replicationInstanceClass: 'dms.r5.large',
-      allocatedStorage: 10,
-      allowMajorVersionUpgrade: false,
-      autoMinorVersionUpgrade: false,
-      multiAz: false,
-      publiclyAccessible: false,
-      replicationSubnetGroupIdentifier: subnetGroup.ref,
-      vpcSecurityGroupIds: [dmsSecurityGroup.securityGroupId],      
-    });
 
     const streamWriterRole = new Role(this, 'DMSStreamRole', {
       assumedBy: new ServicePrincipal('dms.amazonaws.com')
@@ -81,7 +65,7 @@ export class DMSReplicator extends Construct {
       password: props.source.password,
       port: props.source.port,
       serverName: props.source.serverName,
-      username: props.source.username
+      username: props.source.username,
     });
 
     const target = new CfnEndpoint(this, 'dms-target', {
@@ -99,16 +83,6 @@ export class DMSReplicator extends Construct {
     });
     props.target.bucket.grantReadWrite(dmsTargetRole);
 
-    new CfnEndpoint(this, 'Target', {
-      endpointType: 'target',
-      engineName: 's3',
-      extraConnectionAttributes: 'dataFormat=parquet;',
-      s3Settings: {
-        bucketName: props.target.bucket.bucketName,
-        serviceAccessRoleArn: dmsTargetRole.roleArn
-      }
-    });
-
     var dmsTableMappings = {
       "rules": [
         {
@@ -124,36 +98,190 @@ export class DMSReplicator extends Construct {
       ]
     };
 
-    new CfnReplicationTask(this, 'KinesisReplicationTask', {
-      replicationInstanceArn: this.replicatorInstance.ref,
-      migrationType: 'full-load-and-cdc',
-      sourceEndpointArn: source.ref,
-      targetEndpointArn: target.ref,
-      tableMappings: JSON.stringify(dmsTableMappings),
-      // replicationTaskSettings: JSON.stringify(this.getTaskSettings())      
-    });
+    const lambdaProps = {
+      runtime: Runtime.NODEJS_18_X,
+      memorySize: 1028,
+      timeout: Duration.minutes(15),
+      logRetention: RetentionDays.ONE_DAY,
+    };
 
-    new CfnReplicationTask(this, 'S3ReplicationTask', {
-      migrationType: 'full-load-and-cdc',
-      replicationInstanceArn: this.replicatorInstance.ref,
-      sourceEndpointArn: source.ref,
-      tableMappings: JSON.stringify(dmsTableMappings),
-      targetEndpointArn: target.ref,
-      replicationTaskSettings: JSON.stringify(this.getTaskSettings())
-    });
+    if (!props.serverless) {
+      const replicatorInstance = new CfnReplicationInstance(this, 'DmsInstance', {
+        replicationInstanceClass: 'dms.r5.large',
+        allocatedStorage: 10,
+        allowMajorVersionUpgrade: false,
+        autoMinorVersionUpgrade: false,
+        multiAz: false,
+        publiclyAccessible: false,
+        replicationSubnetGroupIdentifier: subnetGroup.ref,
+        vpcSecurityGroupIds: [dmsSecurityGroup.securityGroupId],      
+      });
 
-    // new AwsCustomResource(this, 'StartTask', {
-    //   onCreate: {
-    //     service: 'DMS',
-    //     action: 'startReplicationTask',
-    //     parameters: {
-    //       ReplicationTaskArn: replicationTask.ref,
-    //       StartReplicationTaskType: "start-replication"
-    //     },
-    //     physicalResourceId: PhysicalResourceId.fromResponse('ReplicationTask.ReplicationTaskIdentifier'),        
-    //   },
-    //   policy: AwsCustomResourcePolicy.fromSdkCalls({ resources: AwsCustomResourcePolicy.ANY_RESOURCE })
-    // });
+      const task = new CfnReplicationTask(this, 'KinesisReplicationTask', {
+        replicationInstanceArn: replicatorInstance.ref,
+        migrationType: 'full-load-and-cdc',
+        sourceEndpointArn: source.ref,
+        targetEndpointArn: target.ref,
+        tableMappings: JSON.stringify(dmsTableMappings),
+        replicationTaskSettings: JSON.stringify(this.getTaskSettings()),
+      });
+      
+      const preDmsFn = new NodejsFunction(this, `pre-dms`, {
+        ...lambdaProps,
+        entry: join(__dirname, "../lambda/dms-switch/dms-pre.ts"),
+        environment: {
+          STACK_NAME: Stack.of(this).stackName,
+        },
+        initialPolicy: [
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+              "cloudformation:Describe*",
+              "cloudformation:Get*",
+              "cloudformation:List*",
+            ],
+            resources: ["*"],
+          }),
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: ["dms:*"],
+            resources: ["*"],
+          }),
+        ],
+      });
+  
+      const postDmsFn = new NodejsFunction(this, `post-dms`, {
+        ...lambdaProps,
+        entry: join(__dirname, "../lambda/dms-switch/dms-post.ts"),
+        environment: {
+          STACK_NAME: Stack.of(this).stackName,
+          DMS_TASK: task.ref,
+        },
+        initialPolicy: [
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+              "cloudformation:Describe*",
+              "cloudformation:Get*",
+              "cloudformation:List*",
+            ],
+            resources: ["*"],
+          }),
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: ["dms:*"],
+            resources: ["*"],
+          }),
+        ],
+      });
+            
+      const preProvider = new Provider(this, `pre-dms-provider`, {
+        onEventHandler: preDmsFn,
+      });
+  
+      const preResource = new CustomResource(this, `pre-dms-resource`, {
+        properties: { Version: new Date().getTime().toString() },
+        serviceToken: preProvider.serviceToken,
+      });
+  
+      const postProvider = new Provider(this, `post-dms-provider`, {
+        onEventHandler: postDmsFn,
+      });
+  
+      const postResource = new CustomResource(this, `post-dms-resource`, {
+        properties: { Version: new Date().getTime().toString() },
+        serviceToken: postProvider.serviceToken,
+      });
+
+      task.node.addDependency(preResource);
+      postResource.node.addDependency(task);
+
+    } else {
+      const replicationConfig = new CfnReplicationConfig(this, 'ServerlessReplicationConfig', {
+        computeConfig: {
+          maxCapacityUnits: 16,    
+          multiAz: false,
+          replicationSubnetGroupId: subnetGroup.ref,
+          vpcSecurityGroupIds: [dmsSecurityGroup.securityGroupId],
+        },
+        replicationSettings: this.getTaskSettings(),
+        replicationType: 'full-load-and-cdc',
+        sourceEndpointArn: source.ref,
+        tableMappings: dmsTableMappings,
+        targetEndpointArn: target.ref,
+        replicationConfigIdentifier: 'dmsKinesisConfig',
+      });
+
+      const preDmsFn = new NodejsFunction(this, `pre-dms`, {
+        ...lambdaProps,
+        entry: join(__dirname, "../lambda/dms-switch-serverless/dms-pre.ts"),
+        environment: {
+          STACK_NAME: Stack.of(this).stackName,
+        },
+        initialPolicy: [
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+              "cloudformation:Describe*",
+              "cloudformation:Get*",
+              "cloudformation:List*",
+            ],
+            resources: ["*"],
+          }),
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: ["dms:*"],
+            resources: ["*"],
+          }),
+        ],
+      });
+  
+      const postDmsFn = new NodejsFunction(this, `post-dms`, {
+        ...lambdaProps,
+        entry: join(__dirname, "../lambda/dms-switch-serverless/dms-post.ts"),
+        environment: {
+          STACK_NAME: Stack.of(this).stackName,
+          DMS_TASK: replicationConfig.ref, // 
+        },
+        initialPolicy: [
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+              "cloudformation:Describe*",
+              "cloudformation:Get*",
+              "cloudformation:List*",
+            ],
+            resources: ["*"],
+          }),
+          new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: ["dms:*"],
+            resources: ["*"],
+          }),
+        ],
+      });
+            
+      const preProvider = new Provider(this, `pre-dms-provider`, {
+        onEventHandler: preDmsFn,
+      });
+  
+      const preResource = new CustomResource(this, `pre-dms-resource`, {
+        properties: { Version: new Date().getTime().toString() },
+        serviceToken: preProvider.serviceToken,
+      });
+  
+      const postProvider = new Provider(this, `post-dms-provider`, {
+        onEventHandler: postDmsFn,
+      });
+  
+      const postResource = new CustomResource(this, `post-dms-resource`, {
+        properties: { Version: new Date().getTime().toString() },
+        serviceToken: postProvider.serviceToken,
+      });
+
+      replicationConfig.node.addDependency(preResource);
+      postResource.node.addDependency(replicationConfig);
+    }
   }
 
   private getTaskSettings(): Object {
@@ -320,10 +448,10 @@ export class DMSReplicator extends Construct {
         "MemoryKeepTime": 60,
         "StatementCacheSize": 50
       },
-      "PostProcessingRules": null,
-      "CharacterSetSettings": null,
-      "LoopbackPreventionSettings": null,
-      "BeforeImageSettings": null
+      // "PostProcessingRules": null,
+      // "CharacterSetSettings": null,
+      // "LoopbackPreventionSettings": null,
+      // "BeforeImageSettings": null
     };
   }
 }  

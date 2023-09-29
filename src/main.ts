@@ -4,7 +4,7 @@ import { EventType } from 'aws-cdk-lib/aws-s3';
 import { SnsDestination } from 'aws-cdk-lib/aws-s3-notifications';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { Construct } from 'constructs';
-import { DMSReplicator } from './constructs/dms-replicator';
+import { KinesisDMSReplicator } from './constructs/dms-replicator';
 import { KinesisPipeline } from './constructs/kinesis-pipeline';
 import { Notebook } from './constructs/notebook';
 import { RDSPostgresDatabase } from './constructs/rds-postgres-db';
@@ -50,7 +50,7 @@ export class DMSKinesisStack extends Stack {
       new SnsDestination(topic),
     );
 
-    new DMSReplicator(this, 'DMSReplicator', {
+    new KinesisDMSReplicator(this, 'DMSReplicator', {
       vpc: vpc,
       target: {
         stream: pipeline.stream,
@@ -64,6 +64,7 @@ export class DMSKinesisStack extends Stack {
         serverName: db.database.instanceEndpoint.hostname,
         databaseName: databaseName,
       },
+      serverless: true,
     });
   }
 }
