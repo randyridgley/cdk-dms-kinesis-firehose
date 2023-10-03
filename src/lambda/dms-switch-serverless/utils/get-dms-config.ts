@@ -7,5 +7,6 @@ export const getDmsConfig = async ({ cf, StackName }: {
 }): Promise<string> => {
   const resources = await listStackResources({ cf, StackName, resources: [] });
   const dmsConfig = resources.filter((res) => res.ResourceType === "AWS::DMS::ReplicationConfig")[0].PhysicalResourceId;
+  console.log(dmsConfig);
   return `${dmsConfig}`;
 };

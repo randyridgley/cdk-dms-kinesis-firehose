@@ -1,4 +1,4 @@
-import { App, CfnOutput, Stack, StackProps } from 'aws-cdk-lib';
+import { App, Aspects, CfnOutput, Stack, StackProps } from 'aws-cdk-lib';
 import { InterfaceVpcEndpointAwsService, Vpc } from 'aws-cdk-lib/aws-ec2';
 import { EventType } from 'aws-cdk-lib/aws-s3';
 import { SnsDestination } from 'aws-cdk-lib/aws-s3-notifications';
@@ -8,7 +8,7 @@ import { KinesisDMSReplicator } from './constructs/dms-replicator';
 import { KinesisPipeline } from './constructs/kinesis-pipeline';
 import { Notebook } from './constructs/notebook';
 import { RDSPostgresDatabase } from './constructs/rds-postgres-db';
-
+import { ArchitectureDiagramAspect } from '@aws-community/arch-dia'
 export class DMSKinesisStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps = {}) {
     super(scope, id, props);
@@ -77,6 +77,9 @@ const devEnv = {
 
 const app = new App();
 
-new DMSKinesisStack(app, 'cdk-dms-kinesis-firehose-dev', { env: devEnv });
+const dmsKinesisStack = new DMSKinesisStack(app, 'cdk-dms-kinesis-firehose-dev', { env: devEnv });
+const archDia = new ArchitectureDiagramAspect();
+Aspects.of(dmsKinesisStack).add(archDia);
+archDia.generateDiagram();
 
 app.synth();

@@ -1,6 +1,10 @@
 {
   "dependencies": [
     {
+      "name": "@aws-community/arch-dia",
+      "type": "build"
+    },
+    {
       "name": "@aws-sdk/client-cloudformation",
       "type": "build"
     },

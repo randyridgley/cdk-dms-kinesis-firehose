@@ -7,6 +7,7 @@ const project = new awscdk.AwsCdkTypeScriptApp({
     '@aws-sdk/client-cloudformation',
     '@types/aws-lambda',
     '@aws-sdk/client-database-migration-service',
+    '@aws-community/arch-dia'
   ]
   // deps: [],                /* Runtime dependencies of this module. */
   // description: undefined,  /* The description is just a string that helps people understand the purpose of the package. */

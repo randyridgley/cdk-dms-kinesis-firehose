@@ -30,6 +30,11 @@
   resolved "https://registry.yarnpkg.com/@aws-cdk/asset-node-proxy-agent-v6/-/asset-node-proxy-agent-v6-2.0.1.tgz#6dc9b7cdb22ff622a7176141197962360c33e9ac"
   integrity sha512-DDt4SLdLOwWCjGtltH4VCST7hpOI5DzieuhGZsBpZ+AgJdSI2GCjklCXm0GCTwJG/SolkL5dtQXyUKgg9luBDg==
 
+"@aws-community/arch-dia@^1.1.2":
+  version "1.1.2"
+  resolved "https://registry.yarnpkg.com/@aws-community/arch-dia/-/arch-dia-1.1.2.tgz#8db2070f2e5c75254bba5d074fd386a3682a385b"
+  integrity sha512-mnmvpHyi84QJCn/NNBPMX/0a6alsI/tNLhbiRaHJz4YxBa0EsEd7czgdJBZj6XMSp+2lJmjWrQO8TXc9zn3e1w==
+
 "@aws-crypto/crc32@3.0.0":
   version "3.0.0"
   resolved "https://registry.yarnpkg.com/@aws-crypto/crc32/-/crc32-3.0.0.tgz#07300eca214409c33e3ff769cd5697b57fdd38fa"
