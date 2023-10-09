@@ -8,7 +8,7 @@ import type {
   CloudFormationCustomResourceFailedResponse,
   CloudFormationCustomResourceSuccessResponse,
 } from "aws-lambda";
-import { getDmsStatus } from "./utils/get-dms-status";
+import { getDmsTaskStatus } from "./utils/get-dms-status";
 import { waitForDmsStatus } from "./utils/wait-for-dms-status";
 import { hasDmsChanges } from "./utils/has-dms-changes";
 
@@ -46,7 +46,7 @@ export const handler = async (
         if (dmsChanges) {
           shouldUnpause = true;
         } else {
-          const status = await getDmsStatus({ dms, ReplicationTaskArn });
+          const status = await getDmsTaskStatus({ dms, ReplicationTaskArn });
           console.log(`DMS status: ${status}`);
           if (status === "stopped" || status === "ready") {
             shouldUnpause = true;

@@ -214,7 +214,7 @@ export class KinesisDMSReplicator extends Construct {
 
       const preDmsServerlessFn = new NodejsFunction(this, `pre-dms`, {
         ...lambdaProps,
-        entry: join(__dirname, "../lambda/dms-switch-serverless/dms-pre.ts"),
+        entry: join(__dirname, "../lambda/dms-switch/dms-pre-serverless.ts"),
         environment: {
           STACK_NAME: Stack.of(this).stackName,
         },
@@ -238,7 +238,7 @@ export class KinesisDMSReplicator extends Construct {
   
       const postDmsServerlessFn = new NodejsFunction(this, `post-dms`, {
         ...lambdaProps,
-        entry: join(__dirname, "../lambda/dms-switch-serverless/dms-post.ts"),
+        entry: join(__dirname, "../lambda/dms-switch/dms-post-serverless.ts"),
         environment: {
           STACK_NAME: Stack.of(this).stackName,
           DMS_TASK: replicationConfig.ref, // 

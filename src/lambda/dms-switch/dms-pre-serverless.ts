@@ -5,10 +5,10 @@ import type {
   CloudFormationCustomResourceFailedResponse,
   CloudFormationCustomResourceSuccessResponse,
 } from 'aws-lambda';
-import { getDmsConfig } from './utils/get-dms-config';
+import { getDmsConfig } from '../dms-switch/utils/get-dms-config';
 import { hasDmsChanges } from './utils/has-dms-changes';
-import { getDmsStatus } from './utils/get-dms-status';
-import { waitForDmsStatus } from './utils/wait-for-dms-status';
+import { getDmsReplicationStatus } from '../dms-switch/utils/get-dms-replication-status';
+import { waitForDmsStatus } from './utils/wait-for-dms-config-status';
 
 const dms = new DatabaseMigrationServiceClient({});
 const cf = new CloudFormationClient({});
@@ -22,7 +22,7 @@ export const handler = async (
     if (!ReplicationConfigArn) {
       ReplicationConfigArn = await getDmsConfig({ cf, StackName });
     }
-    const status = await getDmsStatus({ dms, ReplicationConfigArn: ReplicationConfigArn });
+    const status = await getDmsReplicationStatus({ dms, ReplicationConfigArn: ReplicationConfigArn });
     if (status === 'running') {
       if (event.RequestType === 'Delete' || await hasDmsChanges({ cf, StackName })) {
         // pause task

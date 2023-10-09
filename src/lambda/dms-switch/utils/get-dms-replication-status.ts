@@ -3,7 +3,7 @@ import {
   DescribeReplicationsCommand,
 } from '@aws-sdk/client-database-migration-service';
 
-export const getDmsStatus = async ({
+export const getDmsReplicationStatus = async ({
   dms,
   ReplicationConfigArn: replicationConfigArn,
 }: {

@@ -3,7 +3,7 @@ import {
   DescribeReplicationTasksCommand,
 } from '@aws-sdk/client-database-migration-service';
 
-export const getDmsStatus = async ({
+export const getDmsTaskStatus = async ({
   dms,
   ReplicationTaskArn,
 }: {

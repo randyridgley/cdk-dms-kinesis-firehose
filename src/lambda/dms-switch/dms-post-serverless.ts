@@ -8,9 +8,9 @@ import type {
   CloudFormationCustomResourceFailedResponse,
   CloudFormationCustomResourceSuccessResponse,
 } from "aws-lambda";
-import { getDmsStatus } from "./utils/get-dms-status";
-import { waitForDmsStatus } from "./utils/wait-for-dms-status";
-import { hasDmsChanges } from "./utils/has-dms-changes";
+import { getDmsReplicationStatus } from "./utils/get-dms-replication-status";
+import { waitForDmsStatus } from "./utils/wait-for-dms-config-status";
+import { hasDmsChanges } from "../dms-switch/utils/has-dms-changes";
 
 const dms = new DatabaseMigrationServiceClient({});
 const cf = new CloudFormationClient({});
@@ -47,7 +47,7 @@ export const handler = async (
         if (dmsChanges) {
           shouldUnpause = true;
         } else {
-          const status = await getDmsStatus({ dms, ReplicationConfigArn: ReplicationConfigArn });
+          const status = await getDmsReplicationStatus({ dms, ReplicationConfigArn: ReplicationConfigArn });
           console.log(`DMS status: ${status}`);
           if (status === "stopped" || status === "ready") {
             shouldUnpause = true;

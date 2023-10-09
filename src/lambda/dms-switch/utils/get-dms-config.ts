@@ -1,5 +1,5 @@
 import { CloudFormationClient } from '@aws-sdk/client-cloudformation';
-import { listStackResources } from './list-stack-resources';
+import { listStackResources } from '../../dms-switch/utils/list-stack-resources';
 
 export const getDmsConfig = async ({ cf, StackName }: {
   cf: CloudFormationClient;

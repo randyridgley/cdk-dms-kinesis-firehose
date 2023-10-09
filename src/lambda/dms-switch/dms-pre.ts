@@ -7,7 +7,7 @@ import type {
 } from 'aws-lambda';
 import { getDmsTask } from './utils/get-dms-task';
 import { hasDmsChanges } from './utils/has-dms-changes';
-import { getDmsStatus } from './utils/get-dms-status';
+import { getDmsTaskStatus } from './utils/get-dms-status';
 import { waitForDmsStatus } from './utils/wait-for-dms-status';
 
 const dms = new DatabaseMigrationServiceClient({});
@@ -22,7 +22,7 @@ export const handler = async (
     if (!ReplicationTaskArn) {
       ReplicationTaskArn = await getDmsTask({ cf, StackName });
     }
-    const status = await getDmsStatus({ dms, ReplicationTaskArn });
+    const status = await getDmsTaskStatus({ dms, ReplicationTaskArn });
     if (status === 'running') {
       if (event.RequestType === 'Delete' || await hasDmsChanges({ cf, StackName })) {
         // pause task

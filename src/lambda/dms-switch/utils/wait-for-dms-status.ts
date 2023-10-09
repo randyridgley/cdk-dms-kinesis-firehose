@@ -1,5 +1,5 @@
 import { DatabaseMigrationServiceClient } from '@aws-sdk/client-database-migration-service';
-import { getDmsStatus } from './get-dms-status';
+import { getDmsTaskStatus } from './get-dms-status';
 
 export const waitForDmsStatus = async ({
   dms,
@@ -12,7 +12,7 @@ export const waitForDmsStatus = async ({
 }): Promise<string> => {
   let status = '';
   for (let j = 0; j < 24; j++) {
-    status = await getDmsStatus({ dms, ReplicationTaskArn });
+    status = await getDmsTaskStatus({ dms, ReplicationTaskArn });
     console.log(`DMS status: ${status}`);
     if (status === targetStatus) {
       return status;
