@@ -1,6 +1,10 @@
 {
   "dependencies": [
     {
+      "name": "@aws-cdk/aws-lambda-python-alpha",
+      "type": "build"
+    },
+    {
       "name": "@aws-community/arch-dia",
       "type": "build"
     },

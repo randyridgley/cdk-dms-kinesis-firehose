@@ -1,0 +1,392 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: 'Collect DMS Custom metric for a replication instance and create a Dashboard using custom metric'
+
+Parameters:
+
+  EmailEndpoint:
+    Description: Email address to subscribe to Alarm SNS topic. (Donot forget to confirm subscribtion)
+    Type: String
+    AllowedPattern: '[^@]+@[^@]+\.[^@]+'
+
+  S3Bucket:
+    Description: AWS S3 bucket for where the Issue_Resolution.csv located
+    Type: String
+
+  S3Key:
+    Description: AWS S3 key for where the Issue_Resolution.csv located
+    Type: String
+    Default: 'Issue_Resolution.csv'
+
+  ErrorPattern:
+    Type: String
+    Default: LobTruncation
+    AllowedValues:
+      - LobTruncation
+
+  CollectionInterval:
+    Description: 'DMS Custom Metric collection interval in seconds. Minumum: 60s; Maximum: 3600s.'
+    Type: String
+    Default: 300
+    AllowedValues:
+      - 60
+      - 300
+      - 600
+      - 3600
+    ConstraintDescription: Must be a valid integer between 60 and 3600 as multiple of 60.
+
+  RiARN:
+    Description: 'ARN of the replication instance to monitor by the CloudWatch Dashboard. For example, arn:aws:dms:us-east-1:123456789012:rep:PT7GXG7MCIU7NGMSHDODU6KL7AU4GIOSOQEK43A.'
+    Type: String
+
+#Mapping for CloudWatch log filter
+Mappings:
+  LogFilter: 
+    FilterPattern:
+      LobTruncation: '?"W:  Truncation" ?truncated ?trimmed'
+
+#template created resources
+Resources:
+
+  # Create SNS topic
+  NotificationSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      KmsMasterKeyId: alias/aws/sns
+      FifoTopic: false
+      TopicName: !Join
+        - '-'
+        -
+          - CFN
+          - !Ref AWS::StackName
+          - DMSDataTruncationTopic
+
+  # Create Subscription
+  NotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref EmailEndpoint
+      Protocol: email
+      TopicArn: !Ref NotificationSNSTopic
+
+  # Get DMS Replication Instance name by RI ARN provided
+  GetDMSConfigFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: !Join
+          - '-'
+          -
+            - CFN
+            - !Ref AWS::StackName
+            - lambdalogtocloudwatch
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+        - PolicyName: !Join
+          - '-'
+          -
+            - CFN
+            - !Ref AWS::StackName
+            - lambdaDescribeDMS
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - dms:DescribeReplicationInstances
+                Resource: '*'
+
+  GetDMSConfigFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          import json
+          import cfnresponse
+          import logging
+          import traceback
+          import boto3
+          import botocore
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          def handler(event, context):
+              try:
+                  #boto3.session.Session().get_available_services()
+                  logger.info(boto3.__version__)
+                  logger.info(botocore.__version__)
+                  logger.info('------ event ------')
+                  logger.info(str(event))
+                  logger.info('------ context ------')
+                  logger.info(str(context))
+                  responseData = {}
+                  if event['RequestType'] == 'Delete':
+                      responseData['CustStatus'] = 'it is Delete'
+                      logger.info(str(responseData['CustStatus']))
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                  elif event['RequestType'] == 'Update' or event['RequestType'] == 'Create':
+                      responseData['CustStatus'] = 'update or Create'
+                      logger.info(str(responseData['CustStatus']))
+                      logger.info('boto3 setup')
+                      ###
+                      client = boto3.client('dms')
+                      response = client.describe_replication_instances( ## get name by RI arn
+                          Filters=[
+                              {
+                                  'Name': 'replication-instance-arn',
+                                  'Values': [
+                                      '${RiARN}'
+                                  ]
+                              },
+                          ]
+                      )
+                      ri_name = ''
+                      if len(response['ReplicationInstances']) > 0:
+                          ri_name = response['ReplicationInstances'][0]['ReplicationInstanceIdentifier']
+                          responseData['CustStatus'] = 'Replication Instance found'
+                          responseData['RiName'] = ri_name
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                      else: 
+                          responseData['CustStatus'] = 'Replication Instance not found using '+ '${RiARN}' + ' privided to the CloudFormation stack.'
+                          cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                  else:
+                      responseData['CustStatus'] = 'else: '+str(event['RequestType'])
+                      logger.info(str(responseData['CustStatus']))
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              except Exception:
+                  logger.info(traceback.print_exc())
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+              finally:
+                  return
+      Handler: index.handler
+      Runtime: python3.9
+      Timeout: 600
+      ReservedConcurrentExecutions: 10
+      Role: !GetAtt
+        - GetDMSConfigFunctionExecutionRole
+        - Arn
+
+  DMSRiConfig:
+    Type: Custom::DMSRiConfig
+    Version: 1.0
+    Properties:
+      ServiceToken: !GetAtt
+        - GetDMSConfigFunction
+        - Arn
+
+  # Create CloudWatch filter to alert on
+  DMSMetricFilter: 
+    DependsOn: DMSRiConfig
+    Type: AWS::Logs::MetricFilter
+    Properties: 
+      LogGroupName: !Join ## log group like dms-tasks-<RI name>
+        - '-'
+        -
+          - dms-tasks
+          - !GetAtt [DMSRiConfig, RiName] 
+      FilterPattern: !FindInMap [LogFilter, FilterPattern, !Ref ErrorPattern]  ## 'LobTruncation' can be a parameter to supply by the user when more patterns defined
+      MetricTransformations: 
+        - 
+          MetricValue: !Ref CollectionInterval
+          MetricNamespace: CustomMetrics/DMS
+          MetricName: !Join
+            - '-'
+            -
+              - CFN
+              - !Ref AWS::StackName
+              - DMSLogDataTruncation
+          Unit: Count
+
+  # Create CloudWatch alarm for the CloudWatch log filter for a certain error pattern
+  DMSCustMetricAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Join
+        - '-'
+        -
+          - CFN
+          - !Ref AWS::StackName
+          - DMSLobTruncationAlarm
+      AlarmDescription: "A CloudWatch Alarm that is triggered when a CloudWatch log filter is satisfied by a certain DMS error pattern."
+      MetricName: !Join
+        - '-'
+        -
+          - CFN
+          - !Ref AWS::StackName
+          - DMSLogDataTruncation
+      Namespace: CustomMetrics/DMS
+      Statistic: SampleCount
+      Period: !Ref CollectionInterval
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  DMSLambdaMonitorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Action: [ 'sts:AssumeRole' ]
+          Effect: Allow
+          Principal:
+            Service: [ lambda.amazonaws.com ]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+
+
+
+
+
+  DMSAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: DMSAccessPolicy
+      Roles: [ !Ref DMSLambdaMonitorRole ]
+      PolicyDocument:
+        Statement:
+
+        - Sid: DMSReadonlyPolicy
+          Effect: Allow
+          Action:
+            - 'dms:DescribeReplicationInstances'
+            - 'dms:DescribeReplicationTasks'
+          Resource: [ '*' ]
+
+        - Sid: CloudWatchLogReadPolicy
+          Effect: Allow
+          Action: ['logs:FilterLogEvents']
+          Resource:
+            - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+
+        - Sid: PublishSNSMessagePolicy
+          Effect: Allow
+          Action: ['sns:Publish']
+          Resource: 
+            - !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*'
+        
+        - Sid: SelectS3ObjectContent
+          Effect: Allow
+          Action: ['s3:GetObject']
+          Resource: 
+            - !Sub 'arn:aws:s3:::${S3Bucket}/*'
+
+  # Create Lambda to be triggered by the event rule for checking DMS issues
+  DMSIssueCustNotification:
+    DependsOn: [NotificationSNSTopic, DMSRiConfig]
+    Type: 'AWS::Lambda::Function'      
+    Properties:
+      Environment:
+        Variables:
+          NotificationSNSTopic: !Ref NotificationSNSTopic
+          RiARN: !Ref RiARN
+          S3Bucket: !Ref S3Bucket
+          S3Key: !Ref S3Key
+          RiName: !GetAtt [DMSRiConfig, RiName]
+          AlarmName: !Ref DMSCustMetricAlarm
+      Code:
+        ZipFile: |
+            dms-issue-notification/index.py
+  
+      Handler: index.lambda_handler
+      FunctionName: !Join
+        - '-'
+        -
+          - CFN
+          - !Ref AWS::StackName
+          - dmsDataTruncationAction
+      Role: !GetAtt DMSLambdaMonitorRole.Arn
+      ReservedConcurrentExecutions: 10
+      Runtime: python3.9
+      Timeout: 60
+
+  # Create Event Rule in EventBridge
+  DMSCustAlarmChangeEventsRule:
+    DependsOn: DMSCustMetricAlarm
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: Events Rule for triggering Lambda to check DMS issues when CloudWatch alarm state changes
+      Name: !Join
+        - '-'
+        -
+          - CFN
+          - !Ref AWS::StackName
+          - DMSLobTruncationAlarm
+      EventPattern:
+        source:
+          - 'aws.cloudwatch'
+        detail-type:
+          - 'CloudWatch Alarm State Change'
+        resources: 
+          - !GetAtt DMSCustMetricAlarm.Arn
+        detail:
+          state:
+            value: 
+              - 'ALARM'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DMSIssueCustNotification.Arn
+          Id: !Join
+            - '-'
+            -
+              - CFN
+              - !Ref AWS::StackName
+              - DMSLobTruncationAlarmId
+
+  #Create Lambda resource permission for Event Rule invocation
+  ChangeAlarmTimezoneResourcePermission:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt DMSIssueCustNotification.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DMSCustAlarmChangeEventsRule.Arn
+
+Outputs:
+  NotificationSNSTopic:
+    Export:
+      Name: !Join
+        - '-'
+        -
+          - CFN
+          - !Ref AWS::StackName
+          - DMSDataTruncationTopic
+    Value: !Ref NotificationSNSTopic
+    Description: 'The SNS topic that will receive customized notification when a certain type of DMS issue occurs'
+  DMSCustAlarmChangeEventsRule:
+    Export:
+      Name: !Join
+        - '-'
+        -
+          - CFN
+          - !Ref AWS::StackName
+          - DMSLobTruncationAlarm
+    Value: !GetAtt DMSCustAlarmChangeEventsRule.Arn
+    Description: 'The EventRule that matches alarm change state and send it to Lambda Function to check DMS issues and create customized message'
+  DMSIssueCustNotification:
+    Export:
+      Name: !Join
+        - '-'
+        -
+          - CFN
+          - !Ref AWS::StackName
+          - dmsDataTruncationAction
+    Value: !GetAtt DMSIssueCustNotification.Arn
+    Description: 'The Lambda function that checks DMS issues and creates custom message and publish to your SNS topic'
